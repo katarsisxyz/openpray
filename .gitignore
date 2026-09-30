@@ -1,0 +1,10 @@
+# Build output
+/server
+/openpray
+*.exe
+*.test
+*.out
+
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,228 @@
+openapi: 3.1.0
+info:
+  title: OpenPray API
+  version: 1.0.0
+  description: |
+    Islamic prayer times, calculated astronomically. The default `kemenag`
+    method is calibrated against official schedules from the Indonesian
+    Ministry of Religious Affairs (Kemenag RI).
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: http://localhost:8080
+    description: Self-hosted (docker run / go run)
+# Public API without authentication.
+security: []
+paths:
+  /v1/times:
+    get:
+      summary: Prayer times for one day
+      operationId: getDailyTimes
+      parameters:
+        - $ref: "#/components/parameters/lat"
+        - $ref: "#/components/parameters/lng"
+        - $ref: "#/components/parameters/tz"
+        - $ref: "#/components/parameters/method"
+        - $ref: "#/components/parameters/elev"
+        - name: date
+          in: query
+          description: Date (YYYY-MM-DD). Defaults to today in `tz`.
+          schema: { type: string, format: date, example: "2026-09-30" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DailyResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/Undefined" }
+  /v1/times/month:
+    get:
+      summary: Prayer times for a whole month
+      operationId: getMonthlyTimes
+      parameters:
+        - $ref: "#/components/parameters/lat"
+        - $ref: "#/components/parameters/lng"
+        - $ref: "#/components/parameters/tz"
+        - $ref: "#/components/parameters/method"
+        - $ref: "#/components/parameters/elev"
+        - name: year
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1900, maximum: 2200, example: 2026 }
+        - name: month
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 12, example: 9 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MonthlyResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/Undefined" }
+  /v1/methods:
+    get:
+      summary: Available calculation methods
+      operationId: listMethods
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [methods]
+                properties:
+                  methods:
+                    type: array
+                    items: { $ref: "#/components/schemas/Method" }
+  /healthz:
+    get:
+      summary: Liveness check
+      operationId: health
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+  /openapi.yaml:
+    get:
+      summary: This OpenAPI spec
+      operationId: openapi
+      responses:
+        "200":
+          description: OK
+          content:
+            application/yaml: {}
+components:
+  parameters:
+    lat:
+      name: lat
+      in: query
+      required: true
+      description: Latitude (negative for south)
+      schema: { type: number, minimum: -90, maximum: 90, example: -6.1754 }
+    lng:
+      name: lng
+      in: query
+      required: true
+      description: Longitude (positive for east)
+      schema: { type: number, minimum: -180, maximum: 180, example: 106.8272 }
+    tz:
+      name: tz
+      in: query
+      required: true
+      description: IANA time zone. Required because guessing it from longitude can be off by an hour near zone borders.
+      schema: { type: string, example: Asia/Jakarta }
+    method:
+      name: method
+      in: query
+      description: Method ID from `/v1/methods`.
+      schema: { type: string, default: kemenag, example: kemenag }
+    elev:
+      name: elev
+      in: query
+      description: Elevation in meters. Only affects methods whose `rise_angle` is 0.
+      schema: { type: number, minimum: 0, maximum: 9000, default: 0 }
+  responses:
+    BadRequest:
+      description: Invalid parameters
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Undefined:
+      description: Prayer times are undefined (high latitude)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string, example: "tz is required, e.g. Asia/Jakarta, Asia/Makassar, Asia/Jayapura" }
+    Location:
+      type: object
+      required: [lat, lng, elevation, timezone]
+      properties:
+        lat: { type: number, example: -6.1754 }
+        lng: { type: number, example: 106.8272 }
+        elevation: { type: number, example: 0 }
+        timezone: { type: string, example: Asia/Jakarta }
+    MethodRef:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, example: kemenag }
+        name: { type: string, example: Kemenag RI }
+    Times:
+      type: object
+      description: Local times (HH:MM) in `tz`.
+      required: [imsak, fajr, sunrise, dhuha, dhuhr, asr, maghrib, isha]
+      properties:
+        imsak: { type: string, example: "04:14" }
+        fajr: { type: string, example: "04:24" }
+        sunrise: { type: string, example: "05:35" }
+        dhuha: { type: string, example: "06:02" }
+        dhuhr: { type: string, example: "11:46" }
+        asr: { type: string, example: "14:52" }
+        maghrib: { type: string, example: "17:50" }
+        isha: { type: string, example: "18:59" }
+    Day:
+      type: object
+      required: [date, times]
+      properties:
+        date: { type: string, format: date, example: "2026-09-30" }
+        times: { $ref: "#/components/schemas/Times" }
+    DailyResponse:
+      type: object
+      required: [location, method, date, times]
+      properties:
+        location: { $ref: "#/components/schemas/Location" }
+        method: { $ref: "#/components/schemas/MethodRef" }
+        date: { type: string, format: date, example: "2026-09-30" }
+        times: { $ref: "#/components/schemas/Times" }
+    MonthlyResponse:
+      type: object
+      required: [location, method, year, month, days]
+      properties:
+        location: { $ref: "#/components/schemas/Location" }
+        method: { $ref: "#/components/schemas/MethodRef" }
+        year: { type: integer, example: 2026 }
+        month: { type: integer, example: 9 }
+        days:
+          type: array
+          items: { $ref: "#/components/schemas/Day" }
+    Method:
+      type: object
+      required: [id, name, fajr_angle, isha_angle, dhuha_angle, asr_factor, rise_angle, ihtiyat_minutes, imsak_minutes, adjustments_minutes]
+      properties:
+        id: { type: string, example: kemenag }
+        name: { type: string, example: Kemenag RI }
+        fajr_angle: { type: number, description: Sun depression below the horizon for Fajr (degrees), example: 20 }
+        isha_angle: { type: number, description: Sun depression below the horizon for Isha (degrees), example: 18 }
+        dhuha_angle: { type: number, description: Sun altitude above the horizon for Dhuha (degrees), example: 4.5 }
+        asr_factor: { type: number, description: "Shadow factor: 1 = Shafi'i, 2 = Hanafi", example: 1 }
+        rise_angle: { type: number, description: "Horizon angle for sunrise/sunset; 0 = 0.833° plus elevation correction", example: 1 }
+        ihtiyat_minutes: { type: integer, description: "Precautionary margin; subtracted from sunrise, added to other times", example: 2 }
+        imsak_minutes: { type: integer, description: Imsak is fajr minus this many minutes, example: 10 }
+        adjustments_minutes:
+          description: Per-prayer minute corrections, applied after ihtiyat.
+          type: object
+          required: [imsak, fajr, sunrise, dhuha, dhuhr, asr, maghrib, isha]
+          properties:
+            imsak: { type: integer, example: 0 }
+            fajr: { type: integer, example: 0 }
+            sunrise: { type: integer, example: 0 }
+            dhuha: { type: integer, example: 0 }
+            dhuhr: { type: integer, example: 1 }
+            asr: { type: integer, example: 0 }
+            maghrib: { type: integer, example: 0 }
+            isha: { type: integer, example: 0 }
