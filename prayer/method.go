@@ -42,7 +42,8 @@ var (
 
 	// Muhammadiyah has used a Fajr angle of 18° since the 2020 Tarjih conference.
 	// Ihtiyat, RiseAngle and Adjust are calibrated against Muhammadiyah's KHGT
-	// schedules (see cmd/compare): 96.6% exact matches, the rest within 1 minute.
+	// schedules (see cmd/compare): 97.3% exact matches over September–October
+	// 2026, the rest within 1 minute.
 	// KHGT does not publish imsak or dhuha; those follow the Kemenag convention.
 	Muhammadiyah = Method{
 		Name:         "Muhammadiyah",

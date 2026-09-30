@@ -11,9 +11,11 @@ The built-in methods are calibrated against official Indonesian schedules:
 | Method | Reference | Exact match | Remaining difference |
 |---|---|---|---|
 | `kemenag` | Ministry of Religious Affairs (Kemenag RI): 5 cities, 4 months, 4,920 times | **92.8%** | ≤ 1 minute |
-| `muhammadiyah` | Muhammadiyah KHGT: 5 cities, September 2026, 900 times | **96.6%** | ≤ 1 minute |
+| `muhammadiyah` | Muhammadiyah KHGT: 5 cities, September–October 2026, 1,830 times | **97.3%** | ≤ 1 minute |
 
-For Kemenag, most of the remaining difference comes from the reference point Kemenag uses for each city. Kemenag publishes schedules per city or regency but does not publish that point. OpenPray calculates for the exact coordinates you give it.
+For Kemenag, most of the remaining difference comes from the reference point Kemenag uses for each city. Kemenag publishes schedules per city or regency but does not publish that point. OpenPray calculates for the exact coordinates you give it, or for the capital of one of Indonesia's 514 regencies and cities (see [Cities](#cities)).
+
+The Muhammadiyah parameters were fitted on September data only. On October, which was not used for fitting, they matched 98.1% of times.
 
 There are three ways to use OpenPray:
 
@@ -63,8 +65,10 @@ The image is about 9 MB. It is built on distroless, runs as a non-root user, and
 
 | Endpoint | Description |
 |---|---|
-| `GET /v1/times?lat=&lng=&tz=[&date=][&method=][&elev=]` | Times for one day (defaults to today) |
-| `GET /v1/times/month?lat=&lng=&tz=&year=&month=[&method=][&elev=]` | Times for a whole month |
+| `GET /v1/times?(city= \| lat=&lng=&tz=)[&date=][&method=]` | Times for one day (defaults to today) |
+| `GET /v1/times/month?(city= \| lat=&lng=&tz=)&year=&month=[&method=]` | Times for a whole month |
+| `GET /v1/cities?[q=][&limit=]` | Search Indonesian regencies and cities |
+| `GET /v1/cities/{id}` | One regency or city |
 | `GET /v1/methods` | Available calculation methods and their parameters |
 | `GET /openapi.yaml` | OpenAPI 3.1 spec, for Swagger UI or SDK generation |
 | `GET /healthz` | Liveness check |
@@ -85,7 +89,36 @@ curl "localhost:8080/v1/times?lat=-6.1754&lng=106.8272&tz=Asia/Jakarta&date=2026
 }
 ```
 
-`tz` is required and must be an IANA timezone name, such as `Asia/Jakarta`, `Asia/Makassar` or `Asia/Jayapura`. OpenPray does not guess the timezone from longitude, because a guess can be an hour off near the borders between Indonesian time zones. Invalid input returns `400 {"error": "..."}`.
+A place is given in one of two ways:
+- **`city`**: the Kemendagri code of an Indonesian regency or city, such as `35.78` for Surabaya. The coordinates and time zone come from the city.
+- **`lat` + `lng` + `tz`** (+ optional `elev` in meters): any location. `tz` must be an IANA name, such as `Asia/Jakarta`, `Asia/Makassar` or `Asia/Jayapura`. OpenPray does not guess the time zone from longitude, because a guess can be an hour off near the borders between Indonesian time zones.
+
+Invalid input returns `400 {"error": "..."}`, and an unknown city returns `404`.
+
+### Cities
+
+`/v1/cities` covers all 514 regencies (*kabupaten*) and cities (*kota*) of Indonesia, identified by their Kemendagri code. The search matches every word of `q` against the name, the capital and the province, and puts exact name matches first:
+
+```sh
+curl "localhost:8080/v1/cities?q=bogor"
+```
+
+```json
+{
+  "cities": [
+    { "id": "32.01", "name": "Kabupaten Bogor", "capital": "Cibinong", "province": "Jawa Barat",
+      "lat": -6.479479, "lng": 106.824717, "elevation": 134, "timezone": "Asia/Jakarta" },
+    { "id": "32.71", "name": "Kota Bogor", "capital": "Bogor", "province": "Jawa Barat",
+      "lat": -6.595057, "lng": 106.794112, "elevation": 260, "timezone": "Asia/Jakarta" }
+  ]
+}
+```
+
+```sh
+curl "localhost:8080/v1/times?city=32.71"
+```
+
+Prayer times for a city are calculated at the location of its capital. The city data comes from [cahyadsn/wilayah](https://github.com/cahyadsn/wilayah) (Kepmendagri 2025, MIT license). `go generate ./internal/repository` regenerates it from a pinned version of that dataset.
 
 The server reads one setting from the environment: `PORT` (default `8080`).
 
@@ -126,12 +159,12 @@ Terms used in the table and in the API:
 go run ./cmd/compare -source kemenag -year 2026 -months 1,4,7,10
 
 # Muhammadiyah, through khgt.muhammadiyah.or.id (per day, exact coordinates)
-go run ./cmd/compare -source muhammadiyah -year 2026 -months 9 -days $(seq -s, 1 30)
+go run ./cmd/compare -source muhammadiyah -year 2026 -months 9,10 -days $(seq -s, 1 31)
 ```
 
 You can override method parameters with `-rise`, `-ihtiyat` and `-adjust dhuhr=1,sunrise=-1`. Responses are cached in your user cache directory.
 
-The KHGT endpoint only serves the current month. That is why the Muhammadiyah calibration currently covers only September 2026. Running the comparison in other months and sharing the results is a very welcome contribution.
+The KHGT endpoint only serves the current month, so data for past months only exists in the cache of whoever fetched it. That is why the Muhammadiyah calibration currently covers September and October 2026. Running the comparison in other months and sharing the results is a very welcome contribution.
 
 ## Project layout
 
@@ -141,11 +174,12 @@ api/               OpenAPI spec
 cmd/server/        HTTP API
 cmd/openpray/      CLI
 cmd/compare/       validation against official schedules
+tools/gencities/   regenerates the embedded city data
 internal/
   router/          the single place where endpoints are registered
   handler/         request parsing & response formatting
   service/         business logic
-  repository/      data access (calculation methods)
+  repository/      data access (calculation methods, cities)
   model/           domain types shared across layers
   middleware/
 ```

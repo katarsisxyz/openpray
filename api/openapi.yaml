@@ -18,8 +18,10 @@ paths:
   /v1/times:
     get:
       summary: Prayer times for one day
+      description: Pass either `city`, or `lat` + `lng` + `tz` (+ optional `elev`).
       operationId: getDailyTimes
       parameters:
+        - $ref: "#/components/parameters/city"
         - $ref: "#/components/parameters/lat"
         - $ref: "#/components/parameters/lng"
         - $ref: "#/components/parameters/tz"
@@ -36,12 +38,15 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/DailyResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/Undefined" }
   /v1/times/month:
     get:
       summary: Prayer times for a whole month
+      description: Pass either `city`, or `lat` + `lng` + `tz` (+ optional `elev`).
       operationId: getMonthlyTimes
       parameters:
+        - $ref: "#/components/parameters/city"
         - $ref: "#/components/parameters/lat"
         - $ref: "#/components/parameters/lng"
         - $ref: "#/components/parameters/tz"
@@ -62,6 +67,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/MonthlyResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/Undefined" }
   /v1/methods:
     get:
@@ -79,6 +85,50 @@ paths:
                   methods:
                     type: array
                     items: { $ref: "#/components/schemas/Method" }
+  /v1/cities:
+    get:
+      summary: Search Indonesian regencies and cities
+      description: |
+        Matches every word of `q` against the name, capital and province
+        (case-insensitive). Exact name matches come first. Without `q`, lists all 514.
+      operationId: searchCities
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string, example: surabaya }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 20 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cities]
+                properties:
+                  cities:
+                    type: array
+                    items: { $ref: "#/components/schemas/City" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /v1/cities/{id}:
+    get:
+      summary: One regency or city
+      operationId: getCity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Kemendagri code
+          schema: { type: string, example: "35.78" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/City" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /healthz:
     get:
       summary: Liveness check
@@ -103,23 +153,25 @@ paths:
             application/yaml: {}
 components:
   parameters:
+    city:
+      name: city
+      in: query
+      description: Kemendagri code of a regency or city from `/v1/cities`. Replaces `lat`, `lng`, `tz` and `elev`.
+      schema: { type: string, example: "35.78" }
     lat:
       name: lat
       in: query
-      required: true
-      description: Latitude (negative for south)
+      description: Latitude (negative for south). Required unless `city` is given.
       schema: { type: number, minimum: -90, maximum: 90, example: -6.1754 }
     lng:
       name: lng
       in: query
-      required: true
-      description: Longitude (positive for east)
+      description: Longitude (positive for east). Required unless `city` is given.
       schema: { type: number, minimum: -180, maximum: 180, example: 106.8272 }
     tz:
       name: tz
       in: query
-      required: true
-      description: IANA time zone. Required because guessing it from longitude can be off by an hour near zone borders.
+      description: IANA time zone. Required unless `city` is given, because guessing it from longitude can be off by an hour near zone borders.
       schema: { type: string, example: Asia/Jakarta }
     method:
       name: method
@@ -134,6 +186,11 @@ components:
   responses:
     BadRequest:
       description: Invalid parameters
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Unknown city
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -155,6 +212,26 @@ components:
         lat: { type: number, example: -6.1754 }
         lng: { type: number, example: 106.8272 }
         elevation: { type: number, example: 0 }
+        timezone: { type: string, example: Asia/Jakarta }
+        city:
+          description: Present when the request used `city`.
+          type: object
+          required: [id, name, province]
+          properties:
+            id: { type: string, example: "35.78" }
+            name: { type: string, example: Kota Surabaya }
+            province: { type: string, example: Jawa Timur }
+    City:
+      type: object
+      required: [id, name, capital, province, lat, lng, elevation, timezone]
+      properties:
+        id: { type: string, description: Kemendagri code, example: "35.78" }
+        name: { type: string, example: Kota Surabaya }
+        capital: { type: string, example: Surabaya }
+        province: { type: string, example: Jawa Timur }
+        lat: { type: number, description: Latitude of the capital, example: -7.258891 }
+        lng: { type: number, description: Longitude of the capital, example: 112.747039 }
+        elevation: { type: number, example: 7 }
         timezone: { type: string, example: Asia/Jakarta }
     MethodRef:
       type: object

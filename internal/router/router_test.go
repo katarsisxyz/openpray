@@ -16,8 +16,14 @@ const jakarta = "lat=-6.1754&lng=106.8272&tz=Asia/Jakarta"
 
 // newTestRouter wires every layer the same way cmd/server does.
 func newTestRouter() http.Handler {
-	svc := service.NewPrayerService(repository.NewMethodRepository())
-	return New(handler.NewPrayerHandler(svc))
+	cities, err := repository.NewCityRepository()
+	if err != nil {
+		panic(err)
+	}
+	return New(
+		handler.NewPrayerHandler(service.NewPrayerService(repository.NewMethodRepository(), cities)),
+		handler.NewCityHandler(service.NewCityService(cities)),
+	)
 }
 
 func get(t *testing.T, path string, out any) int {
@@ -51,6 +57,50 @@ func TestDaily(t *testing.T) {
 	}
 	if resp.Date != "2026-09-30" || resp.Method.ID != "kemenag" || resp.Location.Timezone != "Asia/Jakarta" {
 		t.Errorf("unexpected response: %+v", resp)
+	}
+}
+
+func TestDailyByCity(t *testing.T) {
+	var resp struct {
+		Location struct {
+			Timezone string
+			City     struct{ ID, Name, Province string }
+		}
+		Times times
+	}
+	// Makassar is in WITA; the time zone comes from the city, no tz needed.
+	if code := get(t, "/v1/times?city=73.71&date=2026-09-30", &resp); code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	if resp.Location.Timezone != "Asia/Makassar" || resp.Location.City.Name != "Kota Makassar" {
+		t.Errorf("location = %+v", resp.Location)
+	}
+	if resp.Times.Fajr == "" {
+		t.Errorf("times = %+v", resp.Times)
+	}
+}
+
+func TestCities(t *testing.T) {
+	var list struct {
+		Cities []struct{ ID, Name, Timezone string }
+	}
+	if code := get(t, "/v1/cities?q=surabaya", &list); code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	if len(list.Cities) != 1 || list.Cities[0].ID != "35.78" {
+		t.Errorf("cities = %+v", list.Cities)
+	}
+
+	if get(t, "/v1/cities?limit=1000", &list); len(list.Cities) != 514 {
+		t.Errorf("all cities: got %d, want 514", len(list.Cities))
+	}
+
+	var c struct{ Name, Capital, Timezone string }
+	if code := get(t, "/v1/cities/64.72", &c); code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	if c.Name != "Kota Samarinda" || c.Timezone != "Asia/Makassar" {
+		t.Errorf("city = %+v", c)
 	}
 }
 
@@ -91,7 +141,7 @@ func TestOpenAPI(t *testing.T) {
 	}
 	// Every route in router.go must be documented in the spec.
 	body := rec.Body.String()
-	for _, path := range []string{"/v1/times:", "/v1/times/month:", "/v1/methods:", "/healthz:", "/openapi.yaml:"} {
+	for _, path := range []string{"/v1/times:", "/v1/times/month:", "/v1/methods:", "/v1/cities:", "/v1/cities/{id}:", "/healthz:", "/openapi.yaml:"} {
 		if !strings.Contains(body, "\n  "+path) {
 			t.Errorf("openapi.yaml does not document %s", strings.TrimSuffix(path, ":"))
 		}
@@ -111,6 +161,10 @@ func TestErrors(t *testing.T) {
 		{"bad date format", http.MethodGet, "/v1/times?" + jakarta + "&date=30-09-2026", http.StatusBadRequest},
 		{"invalid month", http.MethodGet, "/v1/times/month?" + jakarta + "&year=2026&month=13", http.StatusBadRequest},
 		{"high latitude", http.MethodGet, "/v1/times?lat=69.65&lng=18.96&tz=Europe/Oslo&date=2026-06-21", http.StatusUnprocessableEntity},
+		{"city and lat together", http.MethodGet, "/v1/times?city=31.71&lat=-6.1", http.StatusBadRequest},
+		{"unknown city", http.MethodGet, "/v1/times?city=99.99", http.StatusNotFound},
+		{"unknown city by id", http.MethodGet, "/v1/cities/99.99", http.StatusNotFound},
+		{"bad limit", http.MethodGet, "/v1/cities?limit=0", http.StatusBadRequest},
 		{"unknown route", http.MethodGet, "/v1/unknown", http.StatusNotFound},
 		{"wrong HTTP method", http.MethodPost, "/v1/times", http.StatusMethodNotAllowed},
 	}

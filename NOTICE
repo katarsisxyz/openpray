@@ -5,3 +5,7 @@ This product is licensed under the Apache License, Version 2.0.
 See the LICENSE file for the full license text.
 
 The solar position algorithm is based on PrayTimes.org.
+
+internal/repository/data/cities.csv is derived from the "wilayah" dataset
+(https://github.com/cahyadsn/wilayah), Copyright (c) 2017-2025 Cahya DSN,
+licensed under the MIT License; see internal/repository/data/LICENSE-wilayah.

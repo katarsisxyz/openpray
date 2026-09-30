@@ -23,6 +23,24 @@ type timesResponse struct {
 }
 
 type locationResponse struct {
+	Lat       float64          `json:"lat"`
+	Lng       float64          `json:"lng"`
+	Elevation float64          `json:"elevation"`
+	Timezone  string           `json:"timezone"`
+	City      *cityRefResponse `json:"city,omitempty"`
+}
+
+type cityRefResponse struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Province string `json:"province"`
+}
+
+type cityResponse struct {
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	Capital   string  `json:"capital"`
+	Province  string  `json:"province"`
 	Lat       float64 `json:"lat"`
 	Lng       float64 `json:"lng"`
 	Elevation float64 `json:"elevation"`
@@ -77,8 +95,19 @@ type adjustmentsResponse struct {
 	Isha    int `json:"isha"`
 }
 
-func toLocation(q service.Query) locationResponse {
-	return locationResponse{Lat: q.Coord.Lat, Lng: q.Coord.Lng, Elevation: q.Coord.Elevation, Timezone: q.Location.String()}
+func toLocation(p model.Place) locationResponse {
+	l := locationResponse{Lat: p.Coord.Lat, Lng: p.Coord.Lng, Elevation: p.Coord.Elevation, Timezone: p.Location.String()}
+	if c := p.City; c != nil {
+		l.City = &cityRefResponse{ID: c.ID, Name: c.Name, Province: c.Province}
+	}
+	return l
+}
+
+func toCity(c model.City) cityResponse {
+	return cityResponse{
+		ID: c.ID, Name: c.Name, Capital: c.Capital, Province: c.Province,
+		Lat: c.Coord.Lat, Lng: c.Coord.Lng, Elevation: c.Coord.Elevation, Timezone: c.Timezone,
+	}
 }
 
 func toMethodRef(m model.Method) methodRefResponse {
@@ -112,6 +141,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrMethodNotFound):
 		writeError(w, http.StatusBadRequest, err.Error()+" (see /v1/methods)")
+	case errors.Is(err, service.ErrCityNotFound):
+		writeError(w, http.StatusNotFound, err.Error()+" (see /v1/cities)")
+	case errors.Is(err, service.ErrInvalidTimezone):
+		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, prayer.ErrUndefined):
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 	default:

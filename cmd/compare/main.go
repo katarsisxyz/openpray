@@ -179,6 +179,10 @@ func fetchKemenag(c city, year, month int, _ []int) ([]refDay, error) {
 func fetchKHGT(c city, year, month int, days []int) ([]refDay, error) {
 	var refs []refDay
 	for _, d := range days {
+		// Skip days the month doesn't have (e.g. September 31).
+		if t := time.Date(year, time.Month(month), d, 0, 0, 0, 0, time.UTC); t.Month() != time.Month(month) {
+			continue
+		}
 		date := fmt.Sprintf("%d-%02d-%02d", year, month, d)
 		var r struct {
 			Times map[string]string `json:"times"`

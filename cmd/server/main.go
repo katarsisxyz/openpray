@@ -28,12 +28,17 @@ func main() {
 
 	// Wiring: repository -> service -> handler -> router.
 	methodRepo := repository.NewMethodRepository()
-	prayerService := service.NewPrayerService(methodRepo)
-	prayerHandler := handler.NewPrayerHandler(prayerService)
+	cityRepo, err := repository.NewCityRepository()
+	if err != nil {
+		slog.Error("load cities", "err", err)
+		os.Exit(1)
+	}
+	prayerHandler := handler.NewPrayerHandler(service.NewPrayerService(methodRepo, cityRepo))
+	cityHandler := handler.NewCityHandler(service.NewCityService(cityRepo))
 
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           router.New(prayerHandler),
+		Handler:           router.New(prayerHandler, cityHandler),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,

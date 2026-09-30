@@ -45,7 +45,7 @@ func (h *PrayerHandler) ListMethods(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"methods": out})
 }
 
-// Daily handles GET /v1/times?lat=&lng=&tz=[&date=YYYY-MM-DD][&method=][&elev=].
+// Daily handles GET /v1/times?(city=|lat=&lng=&tz=[&elev=])[&date=YYYY-MM-DD][&method=].
 func (h *PrayerHandler) Daily(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	query, err := parseQuery(q)
@@ -53,9 +53,9 @@ func (h *PrayerHandler) Daily(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	date := time.Now().In(query.Location)
+	var date time.Time // zero = today at the requested place
 	if s := q.Get("date"); s != "" {
-		if date, err = time.ParseInLocation(time.DateOnly, s, query.Location); err != nil {
+		if date, err = time.Parse(time.DateOnly, s); err != nil {
 			writeError(w, http.StatusBadRequest, "date must be in YYYY-MM-DD format")
 			return
 		}
@@ -67,13 +67,13 @@ func (h *PrayerHandler) Daily(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, dailyResponse{
-		Location:    toLocation(query),
+		Location:    toLocation(s.Place),
 		Method:      toMethodRef(s.Method),
 		dayResponse: toDay(s.Days[0]),
 	})
 }
 
-// Monthly handles GET /v1/times/month?lat=&lng=&tz=&year=&month=[&method=][&elev=].
+// Monthly handles GET /v1/times/month?(city=|lat=&lng=&tz=[&elev=])&year=&month=[&method=].
 func (h *PrayerHandler) Monthly(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	query, err := parseQuery(q)
@@ -102,7 +102,7 @@ func (h *PrayerHandler) Monthly(w http.ResponseWriter, r *http.Request) {
 		days[i] = toDay(d)
 	}
 	writeJSON(w, http.StatusOK, monthlyResponse{
-		Location: toLocation(query),
+		Location: toLocation(s.Place),
 		Method:   toMethodRef(s.Method),
 		Year:     year,
 		Month:    month,
@@ -110,12 +110,22 @@ func (h *PrayerHandler) Monthly(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// parseQuery reads the location and method parameters shared by all schedule endpoints.
+// parseQuery reads the place and method parameters shared by all schedule
+// endpoints. The place is either city, or lat + lng + tz (+ optional elev).
 func parseQuery(q url.Values) (service.Query, error) {
-	var query service.Query
+	query := service.Query{CityID: q.Get("city"), MethodID: q.Get("method")}
+	if query.CityID != "" {
+		for _, k := range []string{"lat", "lng", "tz", "elev"} {
+			if q.Has(k) {
+				return query, fmt.Errorf("use either city or lat/lng/tz, not both (got city and %s)", k)
+			}
+		}
+		return query, nil
+	}
+
 	var err error
 	if query.Coord.Lat, err = parseFloat(q, "lat", -90, 90, true); err != nil {
-		return query, err
+		return query, fmt.Errorf("%w (or pass city, see /v1/cities)", err)
 	}
 	if query.Coord.Lng, err = parseFloat(q, "lng", -180, 180, true); err != nil {
 		return query, err
@@ -123,18 +133,11 @@ func parseQuery(q url.Values) (service.Query, error) {
 	if query.Coord.Elevation, err = parseFloat(q, "elev", 0, 9000, false); err != nil {
 		return query, err
 	}
-
 	// tz is required: guessing it from longitude can be off by an hour near
 	// zone borders (e.g. West vs. East Kalimantan).
-	tz := q.Get("tz")
-	if tz == "" {
+	if query.Timezone = q.Get("tz"); query.Timezone == "" {
 		return query, errors.New("tz is required, e.g. Asia/Jakarta, Asia/Makassar, Asia/Jayapura")
 	}
-	if query.Location, err = time.LoadLocation(tz); err != nil {
-		return query, fmt.Errorf("unknown tz: %q", tz)
-	}
-
-	query.MethodID = q.Get("method")
 	return query, nil
 }
 
