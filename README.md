@@ -170,4 +170,4 @@ Issues and pull requests are welcome in English or Indonesian.
 
 ## License
 
-[Apache-2.0](LICENSE)
+Copyright 2026 Reza Afri Suhangga Hasibuan. Licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE).
